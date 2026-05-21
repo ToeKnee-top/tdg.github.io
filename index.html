@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>The Duck Game</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    html, body { margin: 0; padding: 0; background: #333; }
+    body { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
+    #canvas-wrap { position: relative; display: inline-block; }
+    canvas { display: block; box-shadow: 0 0 32px #2228; border-radius: 18px; background: #7B56F5; }
+
+    #room-overlay {
+      position: absolute;
+      top: 320px;
+      left: 15px;
+      transform: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0,0,0,0.55);
+      border-radius: 12px;
+      padding: 8px 16px;
+      pointer-events: all;
+    }
+    #room-overlay label {
+      color: #fff;
+      font-family: 'Courier', monospace;
+      font-size: 0.95em;
+      white-space: nowrap;
+    }
+    #roomInput {
+      font-family: 'Courier', monospace;
+      font-size: 0.95em;
+      border: 2px solid #8465f7;
+      border-radius: 7px;
+      padding: 4px 10px;
+      background: #1a1a2e;
+      color: #fff;
+      outline: none;
+      width: 120px;
+    }
+    #roomInput:focus { border-color: #c4b5fd; }
+
+    #name-overlay {
+      position: absolute;
+      top: 272px;
+      left: 15px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0,0,0,0.55);
+      border-radius: 12px;
+      padding: 8px 16px;
+      pointer-events: all;
+    }
+    #name-overlay label {
+      color: #fff;
+      font-family: 'Courier', monospace;
+      font-size: 0.95em;
+      white-space: nowrap;
+    }
+    #nameInput {
+      font-family: 'Courier', monospace;
+      font-size: 0.95em;
+      border: 2px solid #8465f7;
+      border-radius: 7px;
+      padding: 4px 10px;
+      background: #1a1a2e;
+      color: #fff;
+      outline: none;
+      width: 100px;
+    }
+    #nameInput:focus { border-color: #c4b5fd; }
+
+    #restartBtn {
+      position: absolute;
+      top: 372px;
+      left: 15px;
+      font-family: 'Courier', monospace;
+      font-size: 0.95em;
+      background: rgba(160,40,40,0.75);
+      color: #fff;
+      border: 2px solid #f87171;
+      border-radius: 10px;
+      padding: 7px 20px;
+      cursor: pointer;
+      pointer-events: all;
+    }
+    #restartBtn:hover { background: rgba(220,70,70,0.9); }
+
+    #net-status {
+      position: absolute;
+      top: 10px;
+      right: 14px;
+      font-family: 'Courier', monospace;
+      font-size: 0.75em;
+      color: #aaa;
+      pointer-events: none;
+    }
+    #net-status.connected { color: #6ee7b7; }
+    #net-status.error     { color: #f87171; }
+
+    .fullscreen-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 18px 0 0 0;
+      padding: 10px 26px;
+      font-family: 'Courier', monospace;
+      font-size: 1.2em;
+      background: linear-gradient(90deg, #8465f7 0%, #6240ea 100%);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      box-shadow: 0 4px 16px #2224;
+      cursor: pointer;
+      transition: background 0.18s, transform 0.13s;
+      outline: none;
+      gap: 8px;
+      user-select: none;
+    }
+    .fullscreen-btn:hover, .fullscreen-btn:focus {
+      background: linear-gradient(90deg, #6240ea 0%, #8465f7 100%);
+      transform: scale(1.045);
+      box-shadow: 0 6px 22px #2226;
+    }
+    h3 { color: white; margin-top: 10px; user-select: none; }
+
+    #canvas-scale-wrap {
+      position: relative;
+      width: 600px;
+      height: 600px;
+      display: inline-block;
+    }
+
+    #canvas-wrap:-webkit-full-screen,
+    #canvas-wrap:-ms-fullscreen,
+    #canvas-wrap:fullscreen {
+      display: flex !important;
+      align-items: center;
+      justify-content: center;
+
+      width: 100vw;
+      height: 100vh;
+
+      margin: 0;
+    }
+    #canvas-wrap:fullscreen #canvas-scale-wrap {
+      margin: auto;
+      margin-top:65px;
+    }
+    #canvas-wrap:fullscreen::backdrop {
+      background: rgb(123,86,245);
+    }
+
+    #canvas-wrap:-webkit-full-screen::backdrop {
+      background: rgb(123,86,245);
+    }
+    #canvas-scale-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── Chat ─────────────────────────────────────────────────────────────── */
+    #chat-wrap {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+      pointer-events: all;
+      z-index: 20;
+    }
+    #chatToggleBtn {
+      width: 36px; height: 36px;
+      border: none; border-radius: 9px;
+      background: rgba(20,10,50,0.72);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      padding: 5px;
+      box-shadow: 0 2px 8px #0004;
+      transition: background 0.15s;
+    }
+    #chatToggleBtn:hover { background: rgba(100,60,220,0.85); }
+    #chatToggleBtn img { width: 22px; height: 22px; filter: invert(1); display: block; }
+    #chat-panel {
+      display: none;
+      flex-direction: column;
+      width: 228px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: rgba(10,5,30,0.82);
+      box-shadow: 0 4px 20px #0006;
+    }
+    #chat-panel.open { display: flex; }
+    #chat-messages {
+      height: 170px;
+      overflow-y: auto;
+      padding: 8px 10px;
+      display: flex; flex-direction: column; gap: 4px;
+      scrollbar-width: thin;
+      scrollbar-color: #6240ea transparent;
+    }
+    .chat-msg {
+      font-family: 'Courier', monospace;
+      font-size: 0.72em;
+      color: #e2e2e2;
+      word-break: break-word;
+      line-height: 1.35;
+    }
+    .chat-msg .chat-author { color: #c4b5fd; font-weight: bold; }
+    #chat-input-row {
+      display: flex;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    #chatInput {
+      flex: 1;
+      font-family: 'Courier', monospace; font-size: 0.78em;
+      background: transparent; color: #fff;
+      border: none; outline: none;
+      padding: 7px 8px;
+    }
+    #chatInput::placeholder { color: #666; }
+    #chatSend {
+      font-family: 'Courier', monospace; font-size: 0.82em;
+      background: #5230c8; color: #fff;
+      border: none; padding: 7px 11px;
+      cursor: pointer; transition: background 0.15s;
+    }
+    #chatSend:hover { background: #8465f7; }
+
+  </style>
+</head>
+<body>
+  <div id="canvas-wrap">
+    <div id="canvas-scale-wrap">
+      <canvas id="gameCanvas"></canvas>
+      <div id="room-overlay">
+        <label for="roomInput">Room:</label>
+        <input id="roomInput" type="text" value="duck-game" maxlength="24" spellcheck="false" id="name-overlay">
+      </div>
+      <div id="name-overlay">
+        <label for="nameInput">Name:</label>
+        <input id="nameInput" type="text" value="Duck" maxlength="16" spellcheck="false">
+      </div>
+      <button id="restartBtn">Reset progress</button>
+      <div id="net-status">connecting…</div>
+
+      <!-- ── Chat ─────────────────────────────────────────────────── -->
+      <div id="chat-wrap">
+        <div id="chat-panel">
+          <div id="chat-messages"></div>
+          <div id="chat-input-row">
+            <input id="chatInput" type="text" maxlength="120"
+                   placeholder="message…" spellcheck="false" autocomplete="off">
+            <button id="chatSend">→</button>
+          </div>
+        </div>
+        <button id="chatToggleBtn" title="Chat">
+          <img src="chat-icon.png" alt="chat">
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <button id="fullscreenBtn" class="fullscreen-btn" title="Play in fullscreen">
+    <svg width="22" height="22" viewBox="0 0 22 22" style="margin-right:4px;vertical-align:middle" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2.5" y="2.5" width="6" height="2" rx="1" fill="#fff"></rect>
+      <rect x="2.5" y="2.5" width="2" height="6" rx="1" fill="#fff"></rect>
+      <rect x="13.5" y="2.5" width="6" height="2" rx="1" fill="#fff"></rect>
+      <rect x="17.5" y="2.5" width="2" height="6" rx="1" fill="#fff"></rect>
+      <rect x="2.5" y="17.5" width="6" height="2" rx="1" fill="#fff"></rect>
+      <rect x="2.5" y="13.5" width="2" height="6" rx="1" fill="#fff"></rect>
+      <rect x="13.5" y="17.5" width="6" height="2" rx="1" fill="#fff"></rect>
+      <rect x="17.5" y="13.5" width="2" height="6" rx="1" fill="#fff"></rect>
+    </svg>
+    Fullscreen
+  </button>
+  <h3>Made by ToeKnee and Formatted for HTML5/Webview by Pear256 -
+  Pretty simple game, collect pancakes, feed the carrot, have fun.
+  (It's Spacebar to Dash)</h3>
+
+  <script src="sketch.js"></script>
+  <script>
+    const _cWrap  = document.getElementById('canvas-wrap');
+    const _cScale = document.getElementById('canvas-scale-wrap');
+
+    function _applyFsScale() {
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        // Use a brief delay so the browser has finished resizing before we measure
+        setTimeout(function() {
+          const s = Math.min(
+            window.innerHeight / 465,
+            window.innerWidth / 465
+          );
+          _cScale.style.transformOrigin = 'center center';
+          _cScale.style.transform = 'scale(' + s + ')';
+        }, 50);
+      } else {
+        _cScale.style.transform = '';
+      }
+    }
+    document.addEventListener('fullscreenchange',       _applyFsScale);
+    document.addEventListener('webkitfullscreenchange', _applyFsScale);
+
+    document.getElementById('fullscreenBtn').addEventListener('click', () => {
+      if (_cWrap.requestFullscreen)       _cWrap.requestFullscreen();
+      else if (_cWrap.webkitRequestFullscreen) _cWrap.webkitRequestFullscreen();
+    });
+    document.oncontextmenu = () => true;
+
+    // ── Chat ──────────────────────────────────────────────────────────────────
+    (function() {
+      var CHAT_KEY   = 'duckgame_chat';
+      var MAX_SAVED  = 120;
+      var panel      = document.getElementById('chat-panel');
+      var msgBox     = document.getElementById('chat-messages');
+      var input      = document.getElementById('chatInput');
+      var sendBtn    = document.getElementById('chatSend');
+      var toggleBtn  = document.getElementById('chatToggleBtn');
+
+      // Load stored history
+      var history = [];
+      try { history = JSON.parse(localStorage.getItem(CHAT_KEY) || '[]'); } catch(e) {}
+
+      function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+      function appendMsg(author, text, save) {
+        var div = document.createElement('div');
+        div.className = 'chat-msg';
+        div.innerHTML = '<span class="chat-author">' + esc(author) + ':</span> ' + esc(text);
+        msgBox.appendChild(div);
+        msgBox.scrollTop = msgBox.scrollHeight;
+        if (save) {
+          history.push({ author: author, text: text });
+          if (history.length > MAX_SAVED) history = history.slice(-MAX_SAVED);
+          try { localStorage.setItem(CHAT_KEY, JSON.stringify(history)); } catch(e) {}
+        }
+      }
+
+      history.forEach(function(m) { appendMsg(m.author, m.text, false); });
+
+      // Hook for sketch.js to deliver incoming room chat messages
+      window._chatReceive = function(author, text) {
+        appendMsg(author, text, true);
+      };
+
+      toggleBtn.addEventListener('click', function() {
+        panel.classList.toggle('open');
+        if (panel.classList.contains('open')) msgBox.scrollTop = msgBox.scrollHeight;
+      });
+
+      function sendMsg() {
+        var text = input.value.trim();
+        if (!text) return;
+        var nameEl = document.getElementById('nameInput');
+        var author = (nameEl && nameEl.value.trim()) ? nameEl.value.trim() : 'Duck';
+        appendMsg(author, text, true);       // show locally immediately
+        if (window.sendChatToRoom) window.sendChatToRoom(author, text);  // relay to room
+        input.value = '';
+      }
+
+      sendBtn.addEventListener('click', sendMsg);
+
+      // Enter sends; all keystrokes stop at the input so the game ignores them
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') sendMsg();
+        e.stopPropagation();
+      });
+    })();
+  </script>
+</body>
+</html>
